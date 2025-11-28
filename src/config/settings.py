@@ -16,7 +16,12 @@ class Settings(BaseSettings):
     es_password: str = Field(default="changeme", description="ES password")
     es_scheme: str = Field(default="http", description="HTTP or HTTPS")
 
-    # Ollama
+    # Analyzer mode: 'external' (Gemini) or 'internal' (Ollama)
+    analyzer_mode: str = Field(
+        default="internal", description="Analyzer mode: 'external' (Gemini) or 'internal' (Ollama)"
+    )
+
+    # Ollama (internal mode)
     ollama_host: str = Field(
         default="http://localhost:11434", description="Ollama API URL"
     )
@@ -27,6 +32,15 @@ class Settings(BaseSettings):
         default="llama3.2", description="Chat model for analysis"
     )
     ollama_timeout: int = Field(default=60, description="Request timeout in seconds")
+
+    # Gemini (external mode)
+    gemini_api_key: str = Field(
+        default="", description="Gemini API key"
+    )
+    gemini_model: str = Field(
+        default="gemini-2.0-flash", description="Gemini model name"
+    )
+    gemini_timeout: int = Field(default=60, description="Gemini request timeout")
 
     # gRPC Server
     grpc_host: str = Field(default="0.0.0.0", description="gRPC bind host")

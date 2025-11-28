@@ -1,9 +1,15 @@
-"""AI Analyzer using Ollama for plagiarism analysis."""
+"""AI Analyzer for plagiarism analysis.
+
+Supports two modes:
+- external: Uses Gemini API (Google)
+- internal: Uses Ollama (local)
+"""
 
 import json
 import logging
-from typing import Optional
+from typing import Optional, Protocol
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 
 import httpx
 
@@ -23,75 +29,22 @@ class AnalysisResult:
     confidence: float
 
 
-class OllamaAnalyzer:
-    """AI analyzer using Ollama chat model for plagiarism analysis."""
+class BaseAnalyzer(ABC):
+    """Base class for AI analyzers."""
 
     def __init__(self):
         self.settings = get_settings()
-        self.base_url = self.settings.ollama_host
-        self.model = self.settings.ollama_chat_model
-        self.timeout = self.settings.ollama_timeout
         self._client: Optional[httpx.Client] = None
 
-    @property
-    def client(self) -> httpx.Client:
-        """Get or create HTTP client."""
-        if self._client is None:
-            logger.info(f"Creating Ollama client with timeout={self.timeout * 2}s")
-            self._client = httpx.Client(
-                base_url=self.base_url,
-                timeout=httpx.Timeout(self.timeout * 2, connect=10.0),  # Longer timeout for chat
-            )
-        return self._client
-
+    @abstractmethod
     def analyze(
         self,
         input_text: str,
         matches: list[dict],
         base_percentage: float,
     ) -> AnalysisResult:
-        """Analyze plagiarism using AI.
-
-        Args:
-            input_text: The text being checked
-            matches: List of matched results from vector search
-            base_percentage: Base plagiarism percentage from similarity scores
-
-        Returns:
-            AnalysisResult with AI-enhanced analysis
-        """
-        # Format matches for prompt
-        matches_text = self._format_matches(matches)
-
-        prompt = self._build_prompt(input_text, matches_text, base_percentage)
-
-        try:
-            response = self.client.post(
-                "/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {
-                        "temperature": 0.1,  # Low temperature for consistency
-                        "num_predict": 1024,
-                    },
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            # Parse JSON response
-            result_text = data.get("response", "{}")
-            return self._parse_response(result_text, base_percentage)
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Ollama API error: {e.response.text}")
-            return self._fallback_result(base_percentage)
-        except Exception as e:
-            logger.error(f"AI analysis failed: {e}")
-            return self._fallback_result(base_percentage)
+        """Analyze plagiarism using AI."""
+        pass
 
     def _format_matches(self, matches: list[dict]) -> str:
         """Format matches for the prompt."""
@@ -99,7 +52,7 @@ class OllamaAnalyzer:
             return "Không tìm thấy kết quả tương tự."
 
         formatted = []
-        for i, match in enumerate(matches[:5], 1):  # Limit to top 5
+        for i, match in enumerate(matches[:5], 1):
             formatted.append(
                 f"""
 Kết quả {i}:
@@ -115,7 +68,6 @@ Kết quả {i}:
         self, input_text: str, matches_text: str, base_percentage: float
     ) -> str:
         """Build the analysis prompt."""
-        # Truncate input text if too long
         truncated_input = input_text[:2000] + "..." if len(input_text) > 2000 else input_text
 
         return f"""Bạn là chuyên gia phát hiện đạo văn. Phân tích văn bản sau và đưa ra đánh giá.
@@ -156,10 +108,7 @@ Chỉ trả về JSON, không có text khác."""
     ) -> AnalysisResult:
         """Parse AI response to AnalysisResult."""
         try:
-            # Clean response text
             response_text = response_text.strip()
-
-            # Try to parse JSON
             data = json.loads(response_text)
 
             return AnalysisResult(
@@ -202,13 +151,158 @@ Chỉ trả về JSON, không có text khác."""
             self._client = None
 
 
+class GeminiAnalyzer(BaseAnalyzer):
+    """AI analyzer using Gemini API (external mode)."""
+
+    def __init__(self):
+        super().__init__()
+        self.api_key = self.settings.gemini_api_key
+        self.model = self.settings.gemini_model
+        self.timeout = self.settings.gemini_timeout
+        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+
+    @property
+    def client(self) -> httpx.Client:
+        """Get or create HTTP client."""
+        if self._client is None:
+            logger.info(f"Creating Gemini client with timeout={self.timeout}s")
+            self._client = httpx.Client(
+                timeout=httpx.Timeout(self.timeout, connect=10.0),
+            )
+        return self._client
+
+    def analyze(
+        self,
+        input_text: str,
+        matches: list[dict],
+        base_percentage: float,
+    ) -> AnalysisResult:
+        """Analyze plagiarism using Gemini API."""
+        matches_text = self._format_matches(matches)
+        prompt = self._build_prompt(input_text, matches_text, base_percentage)
+
+        try:
+            response = self.client.post(
+                f"{self.base_url}?key={self.api_key}",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "contents": [{
+                        "parts": [{"text": prompt}]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "maxOutputTokens": 1024,
+                    }
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Extract text from Gemini response
+            result_text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+
+            # Clean JSON from markdown code blocks if present
+            result_text = self._clean_json_response(result_text)
+
+            return self._parse_response(result_text, base_percentage)
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Gemini API error: {e.response.text}")
+            return self._fallback_result(base_percentage)
+        except Exception as e:
+            logger.error(f"AI analysis failed: {e}")
+            return self._fallback_result(base_percentage)
+
+    def _clean_json_response(self, text: str) -> str:
+        """Clean JSON response from markdown code blocks."""
+        text = text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        return text.strip()
+
+
+class OllamaAnalyzer(BaseAnalyzer):
+    """AI analyzer using Ollama chat model (internal mode)."""
+
+    def __init__(self):
+        super().__init__()
+        self.base_url = self.settings.ollama_host
+        self.model = self.settings.ollama_chat_model
+        self.timeout = self.settings.ollama_timeout
+
+    @property
+    def client(self) -> httpx.Client:
+        """Get or create HTTP client."""
+        if self._client is None:
+            logger.info(f"Creating Ollama client with timeout={self.timeout * 2}s")
+            self._client = httpx.Client(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(self.timeout * 2, connect=10.0),
+            )
+        return self._client
+
+    def analyze(
+        self,
+        input_text: str,
+        matches: list[dict],
+        base_percentage: float,
+    ) -> AnalysisResult:
+        """Analyze plagiarism using Ollama API."""
+        matches_text = self._format_matches(matches)
+        prompt = self._build_prompt(input_text, matches_text, base_percentage)
+
+        try:
+            response = self.client.post(
+                "/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": 0.1,
+                        "num_predict": 1024,
+                    },
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            result_text = data.get("response", "{}")
+            return self._parse_response(result_text, base_percentage)
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Ollama API error: {e.response.text}")
+            return self._fallback_result(base_percentage)
+        except Exception as e:
+            logger.error(f"AI analysis failed: {e}")
+            return self._fallback_result(base_percentage)
+
+
 # Singleton instance
-_analyzer: Optional[OllamaAnalyzer] = None
+_analyzer: Optional[BaseAnalyzer] = None
 
 
-def get_analyzer() -> OllamaAnalyzer:
-    """Get singleton analyzer instance."""
+def get_analyzer() -> BaseAnalyzer:
+    """Get singleton analyzer instance based on configured mode.
+
+    Returns:
+        GeminiAnalyzer if mode is 'external', OllamaAnalyzer if 'internal'
+    """
     global _analyzer
     if _analyzer is None:
-        _analyzer = OllamaAnalyzer()
+        settings = get_settings()
+        mode = settings.analyzer_mode.lower()
+
+        if mode == "external":
+            logger.info("Using Gemini analyzer (external mode)")
+            _analyzer = GeminiAnalyzer()
+        else:
+            logger.info("Using Ollama analyzer (internal mode)")
+            _analyzer = OllamaAnalyzer()
+
     return _analyzer
