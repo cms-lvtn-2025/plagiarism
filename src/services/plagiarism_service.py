@@ -33,12 +33,20 @@ class PlagiarismServicer(plagiarism_pb2_grpc.PlagiarismServiceServicer):
         try:
             logger.info(f"CheckPlagiarism request: {len(request.text)} chars")
 
-            # Extract options
-            options = request.options
-            min_similarity = options.min_similarity if options.min_similarity > 0 else None
-            top_k = options.top_k if options.top_k > 0 else None
-            include_ai = options.include_ai_analysis if options.include_ai_analysis else True
-            exclude_docs = list(options.exclude_docs) if options.exclude_docs else None
+            # Extract options (with safe defaults)
+            options = request.options if request.HasField("options") else None
+            min_similarity = None
+            top_k = None
+            include_ai = False  # Mặc định TẮT AI analysis để response nhanh
+            exclude_docs = None
+
+            if options:
+                min_similarity = options.min_similarity if options.min_similarity > 0 else None
+                top_k = options.top_k if options.top_k > 0 else None
+                # Chỉ bật AI nếu client explicitly set = true
+                if options.HasField("include_ai_analysis"):
+                    include_ai = options.include_ai_analysis
+                exclude_docs = list(options.exclude_docs) if options.exclude_docs else None
 
             # Run plagiarism check
             result = self.detector.check_plagiarism(

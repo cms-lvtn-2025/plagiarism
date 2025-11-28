@@ -37,9 +37,10 @@ class OllamaAnalyzer:
     def client(self) -> httpx.Client:
         """Get or create HTTP client."""
         if self._client is None:
+            logger.info(f"Creating Ollama client with timeout={self.timeout * 2}s")
             self._client = httpx.Client(
                 base_url=self.base_url,
-                timeout=httpx.Timeout(self.timeout * 2),  # Longer timeout for chat
+                timeout=httpx.Timeout(self.timeout * 2, connect=10.0),  # Longer timeout for chat
             )
         return self._client
 
