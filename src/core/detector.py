@@ -11,6 +11,7 @@ from src.storage import get_es_client, SearchResult
 from src.embedding import get_ollama_client
 from src.core.chunker import get_chunker, TextChunk
 from src.core.analyzer import get_analyzer, AnalysisResult
+from src.core.lexical_matcher import calculate_combined_similarity
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +178,7 @@ class PlagiarismDetector:
         chunk: TextChunk,
         search_results: list[SearchResult],
     ) -> ChunkAnalysisResult:
-        """Analyze a single chunk's search results."""
+        """Analyze a single chunk's search results with combined scoring."""
         if not search_results:
             return ChunkAnalysisResult(
                 chunk_index=chunk_index,
@@ -187,7 +188,20 @@ class PlagiarismDetector:
                 matches=[],
             )
 
-        max_result = max(search_results, key=lambda x: x.similarity_score)
+        # Recalculate similarity using combined semantic + lexical scoring
+        combined_results = []
+        for result in search_results:
+            combined_score, _ = calculate_combined_similarity(
+                semantic_score=result.similarity_score,
+                input_text=chunk.text,
+                matched_text=result.matched_text,
+            )
+            # Update the result's similarity score with combined score
+            result.similarity_score = combined_score
+            combined_results.append(result)
+
+        # Find best match after recalculation
+        max_result = max(combined_results, key=lambda x: x.similarity_score)
         max_similarity = max_result.similarity_score
         status = self.settings.get_severity(max_similarity)
 
@@ -198,7 +212,7 @@ class PlagiarismDetector:
             status=status,
             best_match_doc_id=max_result.document_id,
             best_match_title=max_result.document_title,
-            matches=search_results,
+            matches=combined_results,
         )
 
     def _calculate_base_percentage(
