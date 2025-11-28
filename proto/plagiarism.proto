@@ -1,0 +1,203 @@
+syntax = "proto3";
+
+package plagiarism;
+
+option go_package = "plagiarism/proto";
+
+// Plagiarism Detection Service
+service PlagiarismService {
+  // Check a text for plagiarism
+  rpc CheckPlagiarism(CheckRequest) returns (CheckResponse);
+
+  // Upload a document to the database
+  rpc UploadDocument(UploadRequest) returns (UploadResponse);
+
+  // Batch upload documents (streaming)
+  rpc BatchUpload(stream UploadRequest) returns (BatchUploadResponse);
+
+  // Get document by ID
+  rpc GetDocument(GetDocumentRequest) returns (GetDocumentResponse);
+
+  // Delete document
+  rpc DeleteDocument(DeleteDocumentRequest) returns (DeleteDocumentResponse);
+
+  // Search documents by metadata
+  rpc SearchDocuments(SearchRequest) returns (SearchResponse);
+
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// ==================== Check Plagiarism ====================
+
+message CheckRequest {
+  string text = 1;                    // Text to check for plagiarism
+  CheckOptions options = 2;           // Optional settings
+}
+
+message CheckOptions {
+  float min_similarity = 1;           // Minimum similarity threshold (default: 0.5)
+  int32 top_k = 2;                    // Number of results to return (default: 10)
+  bool include_ai_analysis = 3;       // Include Ollama AI analysis (default: true)
+  repeated string exclude_docs = 4;   // Document IDs to exclude from search
+}
+
+message CheckResponse {
+  string request_id = 1;
+  float plagiarism_percentage = 2;    // Overall plagiarism percentage (0-100)
+  Severity severity = 3;              // Severity level
+  string explanation = 4;             // AI-generated explanation
+  repeated Match matches = 5;         // Matched documents
+  repeated ChunkAnalysis chunks = 6;  // Per-chunk analysis
+  Metadata metadata = 7;              // Processing metadata
+}
+
+enum Severity {
+  SAFE = 0;
+  LOW = 1;
+  MEDIUM = 2;
+  HIGH = 3;
+  CRITICAL = 4;
+}
+
+message Match {
+  string document_id = 1;
+  string document_title = 2;
+  string matched_text = 3;            // The matched text from source
+  string input_text = 4;              // The input text that matched
+  float similarity_score = 5;         // Cosine similarity (0-1)
+  Position position = 6;              // Position in input text
+}
+
+message Position {
+  int32 start = 1;
+  int32 end = 2;
+  int32 chunk_index = 3;
+}
+
+message ChunkAnalysis {
+  int32 chunk_index = 1;
+  string text = 2;
+  float max_similarity = 3;
+  Severity status = 4;
+  string best_match_doc_id = 5;
+}
+
+message Metadata {
+  int64 processing_time_ms = 1;
+  int32 chunks_analyzed = 2;
+  int32 documents_searched = 3;
+  string model_used = 4;
+}
+
+// ==================== Upload Document ====================
+
+message UploadRequest {
+  string title = 1;                   // Document title
+  string content = 2;                 // Document content (plain text)
+  map<string, string> metadata = 3;   // Additional metadata (author, year, etc.)
+  string language = 4;                // Language code (vi, en, auto)
+}
+
+message UploadResponse {
+  string document_id = 1;
+  string title = 2;
+  int32 chunks_created = 3;
+  string message = 4;
+  bool success = 5;
+}
+
+message BatchUploadResponse {
+  int32 total_documents = 1;
+  int32 successful = 2;
+  int32 failed = 3;
+  repeated UploadResult results = 4;
+}
+
+message UploadResult {
+  string document_id = 1;
+  string title = 2;
+  bool success = 3;
+  string error = 4;
+}
+
+// ==================== Get Document ====================
+
+message GetDocumentRequest {
+  string document_id = 1;
+  bool include_content = 2;           // Include full content (default: false)
+  bool include_chunks = 3;            // Include chunk details (default: false)
+}
+
+message GetDocumentResponse {
+  Document document = 1;
+  bool found = 2;
+}
+
+message Document {
+  string document_id = 1;
+  string title = 2;
+  string content = 3;
+  map<string, string> metadata = 4;
+  string language = 5;
+  int32 chunk_count = 6;
+  repeated Chunk chunks = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+
+message Chunk {
+  string chunk_id = 1;
+  string text = 2;
+  int32 position = 3;
+  int32 word_count = 4;
+}
+
+// ==================== Delete Document ====================
+
+message DeleteDocumentRequest {
+  string document_id = 1;
+}
+
+message DeleteDocumentResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ==================== Search Documents ====================
+
+message SearchRequest {
+  string query = 1;                   // Text query
+  map<string, string> filters = 2;    // Metadata filters
+  int32 limit = 3;                    // Max results (default: 10)
+  int32 offset = 4;                   // Pagination offset
+}
+
+message SearchResponse {
+  repeated DocumentSummary documents = 1;
+  int32 total = 2;
+}
+
+message DocumentSummary {
+  string document_id = 1;
+  string title = 2;
+  map<string, string> metadata = 3;
+  string language = 4;
+  int32 chunk_count = 5;
+  string created_at = 6;
+}
+
+// ==================== Health Check ====================
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  map<string, ComponentHealth> components = 2;
+}
+
+message ComponentHealth {
+  bool healthy = 1;
+  string message = 2;
+  int64 latency_ms = 3;
+}
