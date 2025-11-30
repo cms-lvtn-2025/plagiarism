@@ -1,2 +1,5 @@
 venv/*
 .env
+
+# Certificates (private keys should never be committed)
+certs/

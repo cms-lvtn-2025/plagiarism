@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     grpc_port: int = Field(default=50051, description="gRPC port")
     grpc_max_workers: int = Field(default=10, description="Thread pool size")
 
+    # TLS Settings
+    grpc_tls_enabled: bool = Field(default=False, description="Enable TLS for gRPC")
+    grpc_cert_path: str = Field(default="certs/plagiarism-server.crt", description="Server certificate path")
+    grpc_key_path: str = Field(default="certs/plagiarism-server.key", description="Server private key path")
+    grpc_ca_path: str = Field(default="certs/ca.crt", description="CA certificate path")
+
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(

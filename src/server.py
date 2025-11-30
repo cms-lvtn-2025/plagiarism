@@ -72,11 +72,35 @@ class PlagiarismServer:
 
         # Bind to address
         address = f"{self.settings.grpc_host}:{self.settings.grpc_port}"
-        self.server.add_insecure_port(address)
+
+        if self.settings.grpc_tls_enabled:
+            # Load TLS credentials
+            try:
+                with open(self.settings.grpc_key_path, "rb") as f:
+                    server_key = f.read()
+                with open(self.settings.grpc_cert_path, "rb") as f:
+                    server_cert = f.read()
+                with open(self.settings.grpc_ca_path, "rb") as f:
+                    ca_cert = f.read()
+
+                credentials = grpc.ssl_server_credentials(
+                    [(server_key, server_cert)],
+                    root_certificates=ca_cert,
+                    require_client_auth=True,
+                )
+                self.server.add_secure_port(address, credentials)
+                logger.info(f"🔒 TLS enabled - Plagiarism Detection Service started on {address}")
+            except Exception as e:
+                logger.error(f"Failed to load TLS certificates: {e}")
+                logger.warning("Falling back to insecure connection")
+                self.server.add_insecure_port(address)
+                logger.info(f"🔓 Plagiarism Detection Service started on {address} (insecure)")
+        else:
+            self.server.add_insecure_port(address)
+            logger.info(f"🔓 Plagiarism Detection Service started on {address}")
 
         # Start server
         self.server.start()
-        logger.info(f"Plagiarism Detection Service started on {address}")
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
