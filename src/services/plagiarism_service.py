@@ -10,6 +10,7 @@ from src.core import (
     get_detector,
     get_document_manager,
     PlagiarismResult,
+    PdfPlagiarismResult,
 )
 from src.storage import get_es_client
 
@@ -352,3 +353,193 @@ class PlagiarismServicer(plagiarism_pb2_grpc.PlagiarismServiceServicer):
         except Exception as e:
             logger.error(f"HealthCheck error: {e}")
             return plagiarism_pb2.HealthCheckResponse(healthy=False)
+
+    def IndexPdfFromMinio(
+        self,
+        request: plagiarism_pb2.IndexPdfFromMinioRequest,
+        context: grpc.ServicerContext,
+    ) -> plagiarism_pb2.IndexPdfFromMinioResponse:
+        """Index a PDF file from MinIO bucket."""
+        try:
+            logger.info(
+                f"IndexPdfFromMinio: {request.bucket_name}/{request.object_path}"
+            )
+
+            # Convert metadata
+            metadata = dict(request.metadata) if request.metadata else {}
+
+            # Call document manager
+            result = self.doc_manager.upload_pdf_from_minio(
+                bucket_name=request.bucket_name,
+                object_path=request.object_path,
+                document_id=request.document_id or None,
+                title=request.title or None,
+                metadata=metadata,
+                language=request.language or None,
+            )
+
+            if not result.success:
+                return plagiarism_pb2.IndexPdfFromMinioResponse(
+                    success=False,
+                    document_id=result.document_id,
+                    error_message=result.error_message,
+                )
+
+            # Build chunk info
+            chunks = []
+            for chunk_info in result.chunks_info:
+                chunks.append(
+                    plagiarism_pb2.PdfChunkInfo(
+                        chunk_id=chunk_info["chunk_id"],
+                        section_title=chunk_info["section_title"],
+                        content_preview=chunk_info["content_preview"],
+                        element_type=chunk_info["element_type"],
+                        position=chunk_info["position"],
+                        word_count=chunk_info["word_count"],
+                    )
+                )
+
+            # Build processing metadata
+            proc_meta = result.processing_metadata
+            processing_metadata = plagiarism_pb2.PdfProcessingMetadata(
+                total_pages=proc_meta.get("total_pages", 0),
+                total_elements=proc_meta.get("total_elements", 0),
+                total_chunks=proc_meta.get("total_chunks", 0),
+                processing_time_ms=proc_meta.get("processing_time_ms", 0),
+                pdf_title=proc_meta.get("pdf_title", ""),
+                pdf_author=proc_meta.get("pdf_author", ""),
+            )
+
+            return plagiarism_pb2.IndexPdfFromMinioResponse(
+                success=True,
+                document_id=result.document_id,
+                title=result.title,
+                total_chunks=result.total_chunks,
+                chunks=chunks,
+                processing_metadata=processing_metadata,
+            )
+
+        except Exception as e:
+            logger.error(f"IndexPdfFromMinio error: {e}", exc_info=True)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return plagiarism_pb2.IndexPdfFromMinioResponse(
+                success=False,
+                error_message=str(e),
+            )
+
+    def CheckPdfFromMinio(
+        self,
+        request: plagiarism_pb2.CheckPdfFromMinioRequest,
+        context: grpc.ServicerContext,
+    ) -> plagiarism_pb2.CheckPdfFromMinioResponse:
+        """Check a PDF file from MinIO for plagiarism."""
+        try:
+            logger.info(
+                f"CheckPdfFromMinio: {request.bucket_name}/{request.object_path}"
+            )
+
+            # Extract options
+            options = request.options if request.HasField("options") else None
+            min_similarity = None
+            top_k = None
+            include_ai = False
+            exclude_docs = None
+
+            if options:
+                min_similarity = options.min_similarity if options.min_similarity > 0 else None
+                top_k = options.top_k if options.top_k > 0 else None
+                if options.HasField("include_ai_analysis"):
+                    include_ai = options.include_ai_analysis
+                exclude_docs = list(options.exclude_docs) if options.exclude_docs else None
+
+            # Call detector
+            result = self.detector.check_pdf_from_minio(
+                bucket_name=request.bucket_name,
+                object_path=request.object_path,
+                min_similarity=min_similarity,
+                top_k=top_k,
+                include_ai_analysis=include_ai,
+                exclude_doc_ids=exclude_docs,
+            )
+
+            return self._build_pdf_check_response(result)
+
+        except Exception as e:
+            logger.error(f"CheckPdfFromMinio error: {e}", exc_info=True)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return plagiarism_pb2.CheckPdfFromMinioResponse(
+                success=False,
+                error_message=str(e),
+            )
+
+    def _build_pdf_check_response(
+        self, result: PdfPlagiarismResult
+    ) -> plagiarism_pb2.CheckPdfFromMinioResponse:
+        """Build gRPC response from PdfPlagiarismResult."""
+        # Convert severity string to enum
+        severity_map = {
+            "SAFE": plagiarism_pb2.SAFE,
+            "LOW": plagiarism_pb2.LOW,
+            "MEDIUM": plagiarism_pb2.MEDIUM,
+            "HIGH": plagiarism_pb2.HIGH,
+            "CRITICAL": plagiarism_pb2.CRITICAL,
+        }
+
+        # Build matches
+        matches = []
+        for m in result.matches:
+            matches.append(
+                plagiarism_pb2.Match(
+                    document_id=m.document_id,
+                    document_title=m.document_title,
+                    matched_text=m.matched_text,
+                    input_text=m.input_text,
+                    similarity_score=m.similarity_score,
+                    position=plagiarism_pb2.Position(
+                        start=m.position_start,
+                        end=m.position_end,
+                        chunk_index=m.chunk_index,
+                    ),
+                )
+            )
+
+        # Build chunk analysis
+        chunks = []
+        for c in result.chunk_analysis:
+            chunks.append(
+                plagiarism_pb2.ChunkAnalysis(
+                    chunk_index=c.chunk_index,
+                    text=c.text,
+                    max_similarity=c.max_similarity,
+                    status=severity_map.get(c.status, plagiarism_pb2.SAFE),
+                    best_match_doc_id=c.best_match_doc_id or "",
+                )
+            )
+
+        # Build metadata
+        metadata = plagiarism_pb2.PdfCheckMetadata(
+            processing_time_ms=result.metadata.processing_time_ms,
+            pdf_extraction_time_ms=result.metadata.pdf_extraction_time_ms,
+            embedding_time_ms=result.metadata.embedding_time_ms,
+            search_time_ms=result.metadata.search_time_ms,
+            total_pages=result.metadata.total_pages,
+            total_chunks=result.metadata.total_chunks,
+            chunks_analyzed=result.metadata.chunks_analyzed,
+            documents_searched=result.metadata.documents_searched,
+            model_used=result.metadata.model_used,
+        )
+
+        return plagiarism_pb2.CheckPdfFromMinioResponse(
+            success=result.success,
+            request_id=result.request_id,
+            document_title=result.document_title,
+            plagiarism_percentage=result.plagiarism_percentage,
+            severity=severity_map.get(result.severity, plagiarism_pb2.SAFE),
+            explanation=result.explanation,
+            matches=matches,
+            chunks=chunks,
+            metadata=metadata,
+            error_message=result.error_message,
+        )

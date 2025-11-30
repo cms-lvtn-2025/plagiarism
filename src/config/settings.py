@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     log_format: str = Field(
         default="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
+    log_dir: str = Field(default="logs", description="Log directory for JSON logs")
+    service_name: str = Field(default="plagiarism", description="Service name for logging")
+    metrics_port: int = Field(default=9107, description="Prometheus metrics port")
 
     # Plagiarism Thresholds
     similarity_critical: float = Field(
@@ -87,6 +90,14 @@ class Settings(BaseSettings):
     embedding_dims: int = Field(default=768, description="Embedding dimensions")
     embedding_batch_size: int = Field(default=32, description="Batch size for embedding")
 
+    # MinIO Storage
+    minio_endpoint: str = Field(default="127.0.0.1", description="MinIO server endpoint")
+    minio_port: int = Field(default=10005, description="MinIO server port")
+    minio_access_key: str = Field(default="", description="MinIO access key")
+    minio_secret_key: str = Field(default="", description="MinIO secret key")
+    minio_use_ssl: bool = Field(default=False, description="Use SSL for MinIO connection")
+    minio_bucket_name: str = Field(default="lvtn", description="Default MinIO bucket name")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -97,6 +108,11 @@ class Settings(BaseSettings):
     def es_url(self) -> str:
         """Get Elasticsearch URL."""
         return f"{self.es_scheme}://{self.es_host}:{self.es_port}"
+
+    @property
+    def minio_url(self) -> str:
+        """Get MinIO endpoint with port."""
+        return f"{self.minio_endpoint}:{self.minio_port}"
 
     def get_severity(self, similarity: float) -> str:
         """Get severity level from similarity score."""

@@ -9,6 +9,8 @@ import grpc
 
 from src import plagiarism_pb2_grpc
 from src.config import get_settings
+from src.logger import LoggingInterceptor, init_file_logger, get_file_logger
+from src.metrics import MetricsServer, MetricsInterceptor
 from src.services.plagiarism_service import PlagiarismServicer
 from src.storage import get_es_client
 
@@ -26,6 +28,7 @@ class PlagiarismServer:
     def __init__(self):
         self.settings = get_settings()
         self.server = None
+        self.metrics_server = None
         self._shutdown_event = False
 
     def setup_elasticsearch(self) -> bool:
@@ -52,13 +55,33 @@ class PlagiarismServer:
 
     def start(self):
         """Start the gRPC server."""
+        # Initialize file logger for JSON structured logging
+        init_file_logger(
+            service_name=self.settings.service_name,
+            log_dir=self.settings.log_dir,
+        )
+        logger.info(f"JSON logs will be written to: {self.settings.log_dir}")
+
+        # Start metrics server
+        metrics_port = int(self.settings.metrics_port)
+        self.metrics_server = MetricsServer(
+            service_name=self.settings.service_name,
+            port=metrics_port,
+        )
+        self.metrics_server.start()
+        logger.info(f"Metrics server started on port {metrics_port}")
+
         # Setup Elasticsearch
         if not self.setup_elasticsearch():
             logger.warning("Elasticsearch setup failed, continuing anyway...")
 
-        # Create gRPC server
+        # Create gRPC server with logging and metrics interceptors
         self.server = grpc.server(
             futures.ThreadPoolExecutor(max_workers=self.settings.grpc_max_workers),
+            interceptors=[
+                LoggingInterceptor(),
+                MetricsInterceptor(service_name=self.settings.service_name),
+            ],
             options=[
                 ("grpc.max_send_message_length", 50 * 1024 * 1024),  # 50MB
                 ("grpc.max_receive_message_length", 50 * 1024 * 1024),  # 50MB
@@ -123,6 +146,15 @@ class PlagiarismServer:
 
             # Close connections
             get_es_client().close()
+
+            # Stop metrics server
+            if self.metrics_server:
+                self.metrics_server.stop()
+
+            # Close file logger
+            file_logger = get_file_logger()
+            if file_logger:
+                file_logger.close()
 
             logger.info("Server stopped")
 

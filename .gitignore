@@ -3,3 +3,6 @@ venv/*
 
 # Certificates (private keys should never be committed)
 certs/
+
+# Log files
+logs/

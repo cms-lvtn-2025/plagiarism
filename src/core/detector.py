@@ -8,10 +8,12 @@ from uuid import uuid4
 
 from src.config import get_settings
 from src.storage import get_es_client, SearchResult
+from src.storage.minio_client import get_minio_client
 from src.embedding import get_ollama_client
 from src.core.chunker import get_chunker, TextChunk
 from src.core.analyzer import get_analyzer, AnalysisResult
 from src.core.lexical_matcher import calculate_combined_similarity
+from src.core.pdf_processor import get_pdf_processor
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,37 @@ class PlagiarismResult:
     ai_analysis: Optional[AnalysisResult] = None
 
 
+@dataclass
+class PdfCheckMetadata:
+    """Metadata for PDF plagiarism check."""
+
+    processing_time_ms: int
+    pdf_extraction_time_ms: int
+    embedding_time_ms: int
+    search_time_ms: int
+    total_pages: int
+    total_chunks: int
+    chunks_analyzed: int
+    documents_searched: int
+    model_used: str = ""
+
+
+@dataclass
+class PdfPlagiarismResult:
+    """Complete PDF plagiarism check result."""
+
+    success: bool
+    request_id: str
+    document_title: str
+    plagiarism_percentage: float
+    severity: str
+    explanation: str
+    matches: list[PlagiarismMatch]
+    chunk_analysis: list[ChunkAnalysisResult]
+    metadata: PdfCheckMetadata
+    error_message: str = ""
+
+
 class PlagiarismDetector:
     """Main plagiarism detection engine."""
 
@@ -68,6 +101,8 @@ class PlagiarismDetector:
         self.ollama_client = get_ollama_client()
         self.chunker = get_chunker()
         self.analyzer = get_analyzer()
+        self.minio_client = get_minio_client()
+        self.pdf_processor = get_pdf_processor()
 
     def check_plagiarism(
         self,
@@ -305,6 +340,275 @@ class PlagiarismDetector:
             chunks_analyzed=0,
             documents_searched=0,
         )
+
+    def check_pdf_from_minio(
+        self,
+        bucket_name: str,
+        object_path: str,
+        min_similarity: Optional[float] = None,
+        top_k: Optional[int] = None,
+        include_ai_analysis: bool = False,
+        exclude_doc_ids: Optional[list[str]] = None,
+    ) -> PdfPlagiarismResult:
+        """Check a PDF file from MinIO for plagiarism.
+
+        Args:
+            bucket_name: MinIO bucket name
+            object_path: Path to PDF file in bucket
+            min_similarity: Minimum similarity threshold
+            top_k: Number of results per chunk
+            include_ai_analysis: Whether to use AI for analysis
+            exclude_doc_ids: Document IDs to exclude
+
+        Returns:
+            PdfPlagiarismResult with detailed analysis
+        """
+        import os
+
+        start_time = time.time()
+        request_id = str(uuid4())
+
+        min_similarity = min_similarity or self.settings.min_score_threshold
+        top_k = top_k or self.settings.top_k_results
+
+        # Check if object exists
+        if not self.minio_client.object_exists(bucket_name, object_path):
+            return PdfPlagiarismResult(
+                success=False,
+                request_id=request_id,
+                document_title="",
+                plagiarism_percentage=0.0,
+                severity="SAFE",
+                explanation="",
+                matches=[],
+                chunk_analysis=[],
+                metadata=PdfCheckMetadata(
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    pdf_extraction_time_ms=0,
+                    embedding_time_ms=0,
+                    search_time_ms=0,
+                    total_pages=0,
+                    total_chunks=0,
+                    chunks_analyzed=0,
+                    documents_searched=0,
+                ),
+                error_message=f"Object not found: {bucket_name}/{object_path}",
+            )
+
+        # Download PDF
+        local_path = self.minio_client.download_file(bucket_name, object_path)
+        if not local_path:
+            return PdfPlagiarismResult(
+                success=False,
+                request_id=request_id,
+                document_title="",
+                plagiarism_percentage=0.0,
+                severity="SAFE",
+                explanation="",
+                matches=[],
+                chunk_analysis=[],
+                metadata=PdfCheckMetadata(
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    pdf_extraction_time_ms=0,
+                    embedding_time_ms=0,
+                    search_time_ms=0,
+                    total_pages=0,
+                    total_chunks=0,
+                    chunks_analyzed=0,
+                    documents_searched=0,
+                ),
+                error_message="Failed to download file from MinIO",
+            )
+
+        try:
+            # Step 1: Process PDF
+            pdf_start = time.time()
+            pdf_result = self.pdf_processor.process_pdf(
+                pdf_path=local_path,
+                document_id=request_id,
+            )
+            pdf_extraction_time = int((time.time() - pdf_start) * 1000)
+
+            if not pdf_result.success:
+                return PdfPlagiarismResult(
+                    success=False,
+                    request_id=request_id,
+                    document_title="",
+                    plagiarism_percentage=0.0,
+                    severity="SAFE",
+                    explanation="",
+                    matches=[],
+                    chunk_analysis=[],
+                    metadata=PdfCheckMetadata(
+                        processing_time_ms=int((time.time() - start_time) * 1000),
+                        pdf_extraction_time_ms=pdf_extraction_time,
+                        embedding_time_ms=0,
+                        search_time_ms=0,
+                        total_pages=0,
+                        total_chunks=0,
+                        chunks_analyzed=0,
+                        documents_searched=0,
+                    ),
+                    error_message=pdf_result.error_message,
+                )
+
+            if not pdf_result.chunks:
+                return PdfPlagiarismResult(
+                    success=False,
+                    request_id=request_id,
+                    document_title=pdf_result.document_title,
+                    plagiarism_percentage=0.0,
+                    severity="SAFE",
+                    explanation="",
+                    matches=[],
+                    chunk_analysis=[],
+                    metadata=PdfCheckMetadata(
+                        processing_time_ms=int((time.time() - start_time) * 1000),
+                        pdf_extraction_time_ms=pdf_extraction_time,
+                        embedding_time_ms=0,
+                        search_time_ms=0,
+                        total_pages=pdf_result.total_pages,
+                        total_chunks=0,
+                        chunks_analyzed=0,
+                        documents_searched=0,
+                    ),
+                    error_message="No content extracted from PDF",
+                )
+
+            logger.info(f"Extracted {len(pdf_result.chunks)} chunks from PDF")
+
+            # Step 2: Generate embeddings
+            embed_start = time.time()
+            chunk_texts = [chunk.text for chunk in pdf_result.chunks]
+            embeddings = self.ollama_client.embed_batch(chunk_texts)
+            embedding_time = int((time.time() - embed_start) * 1000)
+
+            logger.info(f"Generated {len(embeddings)} embeddings")
+
+            # Step 3: Search for similar chunks
+            search_start = time.time()
+            all_matches: list[PlagiarismMatch] = []
+            chunk_results: list[ChunkAnalysisResult] = []
+
+            for i, (pdf_chunk, embedding) in enumerate(zip(pdf_result.chunks, embeddings)):
+                # Vector search
+                search_results = self.es_client.vector_search(
+                    embedding=embedding,
+                    top_k=top_k,
+                    min_score=min_similarity,
+                    exclude_doc_ids=exclude_doc_ids,
+                )
+
+                # Create TextChunk-like object for analysis
+                class PdfTextChunk:
+                    def __init__(self, text, word_count, position):
+                        self.text = text
+                        self.word_count = word_count
+                        self.start_char = position * 100  # Approximate
+                        self.end_char = (position + 1) * 100
+
+                chunk_obj = PdfTextChunk(
+                    text=pdf_chunk.text,
+                    word_count=pdf_chunk.word_count,
+                    position=pdf_chunk.position,
+                )
+
+                # Analyze chunk
+                chunk_analysis = self._analyze_chunk(i, chunk_obj, search_results)
+                chunk_results.append(chunk_analysis)
+
+                # Add matches
+                for result in search_results:
+                    all_matches.append(
+                        PlagiarismMatch(
+                            document_id=result.document_id,
+                            document_title=result.document_title,
+                            matched_text=result.matched_text,
+                            input_text=pdf_chunk.text,
+                            similarity_score=result.similarity_score,
+                            position_start=chunk_obj.start_char,
+                            position_end=chunk_obj.end_char,
+                            chunk_index=i,
+                        )
+                    )
+
+            search_time = int((time.time() - search_start) * 1000)
+
+            # Step 4: Calculate plagiarism percentage
+            class SimpleChunk:
+                def __init__(self, word_count):
+                    self.word_count = word_count
+
+            simple_chunks = [SimpleChunk(c.word_count) for c in pdf_result.chunks]
+            base_percentage = self._calculate_base_percentage(simple_chunks, chunk_results)
+
+            # Step 5: AI analysis (optional)
+            full_text = "\n\n".join(chunk_texts)
+            if include_ai_analysis and all_matches:
+                ai_result = self._run_ai_analysis(full_text, all_matches, base_percentage)
+                final_percentage = ai_result.plagiarism_percentage
+                severity = ai_result.severity
+                explanation = ai_result.explanation
+            else:
+                final_percentage = base_percentage
+                severity = self.settings.get_severity(base_percentage / 100)
+                explanation = self._generate_explanation(base_percentage, len(all_matches))
+
+            # Deduplicate matches
+            unique_matches = self._deduplicate_matches(all_matches)
+
+            processing_time = int((time.time() - start_time) * 1000)
+
+            return PdfPlagiarismResult(
+                success=True,
+                request_id=request_id,
+                document_title=pdf_result.document_title,
+                plagiarism_percentage=final_percentage,
+                severity=severity,
+                explanation=explanation,
+                matches=unique_matches,
+                chunk_analysis=chunk_results,
+                metadata=PdfCheckMetadata(
+                    processing_time_ms=processing_time,
+                    pdf_extraction_time_ms=pdf_extraction_time,
+                    embedding_time_ms=embedding_time,
+                    search_time_ms=search_time,
+                    total_pages=pdf_result.total_pages,
+                    total_chunks=len(pdf_result.chunks),
+                    chunks_analyzed=len(chunk_results),
+                    documents_searched=self.es_client.get_document_count(),
+                    model_used=self.settings.ollama_embed_model,
+                ),
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to check PDF plagiarism: {e}", exc_info=True)
+            return PdfPlagiarismResult(
+                success=False,
+                request_id=request_id,
+                document_title="",
+                plagiarism_percentage=0.0,
+                severity="SAFE",
+                explanation="",
+                matches=[],
+                chunk_analysis=[],
+                metadata=PdfCheckMetadata(
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    pdf_extraction_time_ms=0,
+                    embedding_time_ms=0,
+                    search_time_ms=0,
+                    total_pages=0,
+                    total_chunks=0,
+                    chunks_analyzed=0,
+                    documents_searched=0,
+                ),
+                error_message=str(e),
+            )
+
+        finally:
+            # Clean up temp file
+            if local_path and os.path.exists(local_path):
+                os.remove(local_path)
 
 
 # Singleton instance

@@ -26,6 +26,12 @@ service PlagiarismService {
 
   // Health check
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+
+  // Index PDF from MinIO bucket - extract text, chunk with titles, and index to Elasticsearch
+  rpc IndexPdfFromMinio(IndexPdfFromMinioRequest) returns (IndexPdfFromMinioResponse);
+
+  // Check a PDF file from MinIO for plagiarism
+  rpc CheckPdfFromMinio(CheckPdfFromMinioRequest) returns (CheckPdfFromMinioResponse);
 }
 
 // ==================== Check Plagiarism ====================
@@ -200,4 +206,76 @@ message ComponentHealth {
   bool healthy = 1;
   string message = 2;
   int64 latency_ms = 3;
+}
+
+// ==================== Index PDF from MinIO ====================
+
+message IndexPdfFromMinioRequest {
+  string bucket_name = 1;             // MinIO bucket name
+  string object_path = 2;             // Path to PDF file in bucket
+  string document_id = 3;             // Optional: custom document ID (auto-generated if empty)
+  string title = 4;                   // Optional: document title (extracted from PDF if empty)
+  map<string, string> metadata = 5;   // Additional metadata
+  string language = 6;                // Language code (vi, en, auto)
+}
+
+message IndexPdfFromMinioResponse {
+  bool success = 1;
+  string document_id = 2;
+  string title = 3;
+  int32 total_chunks = 4;
+  repeated PdfChunkInfo chunks = 5;   // Information about extracted chunks
+  string error_message = 6;
+  PdfProcessingMetadata processing_metadata = 7;
+}
+
+message PdfChunkInfo {
+  string chunk_id = 1;
+  string section_title = 2;           // Heading/title of the section
+  string content_preview = 3;         // First 200 chars of content
+  string element_type = 4;            // Title, NarrativeText, ListItem, Table, etc.
+  int32 position = 5;
+  int32 word_count = 6;
+}
+
+message PdfProcessingMetadata {
+  int32 total_pages = 1;
+  int32 total_elements = 2;           // Total elements extracted from PDF
+  int32 total_chunks = 3;             // Final chunks after grouping
+  int64 processing_time_ms = 4;
+  string pdf_title = 5;               // Title extracted from PDF metadata
+  string pdf_author = 6;              // Author from PDF metadata
+}
+
+// ==================== Check PDF Plagiarism from MinIO ====================
+
+message CheckPdfFromMinioRequest {
+  string bucket_name = 1;             // MinIO bucket name
+  string object_path = 2;             // Path to PDF file in bucket
+  CheckOptions options = 3;           // Optional plagiarism check settings
+}
+
+message CheckPdfFromMinioResponse {
+  bool success = 1;
+  string request_id = 2;
+  string document_title = 3;          // Title extracted from PDF
+  float plagiarism_percentage = 4;    // Overall plagiarism percentage (0-100)
+  Severity severity = 5;              // Severity level
+  string explanation = 6;             // AI-generated explanation
+  repeated Match matches = 7;         // Matched documents
+  repeated ChunkAnalysis chunks = 8;  // Per-chunk analysis
+  PdfCheckMetadata metadata = 9;      // Processing metadata
+  string error_message = 10;          // Error message if failed
+}
+
+message PdfCheckMetadata {
+  int64 processing_time_ms = 1;       // Total processing time
+  int64 pdf_extraction_time_ms = 2;   // Time to extract PDF
+  int64 embedding_time_ms = 3;        // Time to generate embeddings
+  int64 search_time_ms = 4;           // Time to search
+  int32 total_pages = 5;
+  int32 total_chunks = 6;
+  int32 chunks_analyzed = 7;
+  int32 documents_searched = 8;
+  string model_used = 9;
 }

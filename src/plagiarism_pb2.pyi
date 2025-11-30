@@ -318,3 +318,132 @@ class ComponentHealth(_message.Message):
     message: str
     latency_ms: int
     def __init__(self, healthy: bool = ..., message: _Optional[str] = ..., latency_ms: _Optional[int] = ...) -> None: ...
+
+class IndexPdfFromMinioRequest(_message.Message):
+    __slots__ = ("bucket_name", "object_path", "document_id", "title", "metadata", "language")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    BUCKET_NAME_FIELD_NUMBER: _ClassVar[int]
+    OBJECT_PATH_FIELD_NUMBER: _ClassVar[int]
+    DOCUMENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    LANGUAGE_FIELD_NUMBER: _ClassVar[int]
+    bucket_name: str
+    object_path: str
+    document_id: str
+    title: str
+    metadata: _containers.ScalarMap[str, str]
+    language: str
+    def __init__(self, bucket_name: _Optional[str] = ..., object_path: _Optional[str] = ..., document_id: _Optional[str] = ..., title: _Optional[str] = ..., metadata: _Optional[_Mapping[str, str]] = ..., language: _Optional[str] = ...) -> None: ...
+
+class IndexPdfFromMinioResponse(_message.Message):
+    __slots__ = ("success", "document_id", "title", "total_chunks", "chunks", "error_message", "processing_metadata")
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    DOCUMENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    PROCESSING_METADATA_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    document_id: str
+    title: str
+    total_chunks: int
+    chunks: _containers.RepeatedCompositeFieldContainer[PdfChunkInfo]
+    error_message: str
+    processing_metadata: PdfProcessingMetadata
+    def __init__(self, success: bool = ..., document_id: _Optional[str] = ..., title: _Optional[str] = ..., total_chunks: _Optional[int] = ..., chunks: _Optional[_Iterable[_Union[PdfChunkInfo, _Mapping]]] = ..., error_message: _Optional[str] = ..., processing_metadata: _Optional[_Union[PdfProcessingMetadata, _Mapping]] = ...) -> None: ...
+
+class PdfChunkInfo(_message.Message):
+    __slots__ = ("chunk_id", "section_title", "content_preview", "element_type", "position", "word_count")
+    CHUNK_ID_FIELD_NUMBER: _ClassVar[int]
+    SECTION_TITLE_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_PREVIEW_FIELD_NUMBER: _ClassVar[int]
+    ELEMENT_TYPE_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    WORD_COUNT_FIELD_NUMBER: _ClassVar[int]
+    chunk_id: str
+    section_title: str
+    content_preview: str
+    element_type: str
+    position: int
+    word_count: int
+    def __init__(self, chunk_id: _Optional[str] = ..., section_title: _Optional[str] = ..., content_preview: _Optional[str] = ..., element_type: _Optional[str] = ..., position: _Optional[int] = ..., word_count: _Optional[int] = ...) -> None: ...
+
+class PdfProcessingMetadata(_message.Message):
+    __slots__ = ("total_pages", "total_elements", "total_chunks", "processing_time_ms", "pdf_title", "pdf_author")
+    TOTAL_PAGES_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_ELEMENTS_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    PROCESSING_TIME_MS_FIELD_NUMBER: _ClassVar[int]
+    PDF_TITLE_FIELD_NUMBER: _ClassVar[int]
+    PDF_AUTHOR_FIELD_NUMBER: _ClassVar[int]
+    total_pages: int
+    total_elements: int
+    total_chunks: int
+    processing_time_ms: int
+    pdf_title: str
+    pdf_author: str
+    def __init__(self, total_pages: _Optional[int] = ..., total_elements: _Optional[int] = ..., total_chunks: _Optional[int] = ..., processing_time_ms: _Optional[int] = ..., pdf_title: _Optional[str] = ..., pdf_author: _Optional[str] = ...) -> None: ...
+
+class CheckPdfFromMinioRequest(_message.Message):
+    __slots__ = ("bucket_name", "object_path", "options")
+    BUCKET_NAME_FIELD_NUMBER: _ClassVar[int]
+    OBJECT_PATH_FIELD_NUMBER: _ClassVar[int]
+    OPTIONS_FIELD_NUMBER: _ClassVar[int]
+    bucket_name: str
+    object_path: str
+    options: CheckOptions
+    def __init__(self, bucket_name: _Optional[str] = ..., object_path: _Optional[str] = ..., options: _Optional[_Union[CheckOptions, _Mapping]] = ...) -> None: ...
+
+class CheckPdfFromMinioResponse(_message.Message):
+    __slots__ = ("success", "request_id", "document_title", "plagiarism_percentage", "severity", "explanation", "matches", "chunks", "metadata", "error_message")
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    DOCUMENT_TITLE_FIELD_NUMBER: _ClassVar[int]
+    PLAGIARISM_PERCENTAGE_FIELD_NUMBER: _ClassVar[int]
+    SEVERITY_FIELD_NUMBER: _ClassVar[int]
+    EXPLANATION_FIELD_NUMBER: _ClassVar[int]
+    MATCHES_FIELD_NUMBER: _ClassVar[int]
+    CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    request_id: str
+    document_title: str
+    plagiarism_percentage: float
+    severity: Severity
+    explanation: str
+    matches: _containers.RepeatedCompositeFieldContainer[Match]
+    chunks: _containers.RepeatedCompositeFieldContainer[ChunkAnalysis]
+    metadata: PdfCheckMetadata
+    error_message: str
+    def __init__(self, success: bool = ..., request_id: _Optional[str] = ..., document_title: _Optional[str] = ..., plagiarism_percentage: _Optional[float] = ..., severity: _Optional[_Union[Severity, str]] = ..., explanation: _Optional[str] = ..., matches: _Optional[_Iterable[_Union[Match, _Mapping]]] = ..., chunks: _Optional[_Iterable[_Union[ChunkAnalysis, _Mapping]]] = ..., metadata: _Optional[_Union[PdfCheckMetadata, _Mapping]] = ..., error_message: _Optional[str] = ...) -> None: ...
+
+class PdfCheckMetadata(_message.Message):
+    __slots__ = ("processing_time_ms", "pdf_extraction_time_ms", "embedding_time_ms", "search_time_ms", "total_pages", "total_chunks", "chunks_analyzed", "documents_searched", "model_used")
+    PROCESSING_TIME_MS_FIELD_NUMBER: _ClassVar[int]
+    PDF_EXTRACTION_TIME_MS_FIELD_NUMBER: _ClassVar[int]
+    EMBEDDING_TIME_MS_FIELD_NUMBER: _ClassVar[int]
+    SEARCH_TIME_MS_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_PAGES_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_CHUNKS_FIELD_NUMBER: _ClassVar[int]
+    CHUNKS_ANALYZED_FIELD_NUMBER: _ClassVar[int]
+    DOCUMENTS_SEARCHED_FIELD_NUMBER: _ClassVar[int]
+    MODEL_USED_FIELD_NUMBER: _ClassVar[int]
+    processing_time_ms: int
+    pdf_extraction_time_ms: int
+    embedding_time_ms: int
+    search_time_ms: int
+    total_pages: int
+    total_chunks: int
+    chunks_analyzed: int
+    documents_searched: int
+    model_used: str
+    def __init__(self, processing_time_ms: _Optional[int] = ..., pdf_extraction_time_ms: _Optional[int] = ..., embedding_time_ms: _Optional[int] = ..., search_time_ms: _Optional[int] = ..., total_pages: _Optional[int] = ..., total_chunks: _Optional[int] = ..., chunks_analyzed: _Optional[int] = ..., documents_searched: _Optional[int] = ..., model_used: _Optional[str] = ...) -> None: ...

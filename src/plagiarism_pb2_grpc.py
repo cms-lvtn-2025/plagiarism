@@ -70,6 +70,16 @@ class PlagiarismServiceStub(object):
                 request_serializer=plagiarism__pb2.HealthCheckRequest.SerializeToString,
                 response_deserializer=plagiarism__pb2.HealthCheckResponse.FromString,
                 _registered_method=True)
+        self.IndexPdfFromMinio = channel.unary_unary(
+                '/plagiarism.PlagiarismService/IndexPdfFromMinio',
+                request_serializer=plagiarism__pb2.IndexPdfFromMinioRequest.SerializeToString,
+                response_deserializer=plagiarism__pb2.IndexPdfFromMinioResponse.FromString,
+                _registered_method=True)
+        self.CheckPdfFromMinio = channel.unary_unary(
+                '/plagiarism.PlagiarismService/CheckPdfFromMinio',
+                request_serializer=plagiarism__pb2.CheckPdfFromMinioRequest.SerializeToString,
+                response_deserializer=plagiarism__pb2.CheckPdfFromMinioResponse.FromString,
+                _registered_method=True)
 
 
 class PlagiarismServiceServicer(object):
@@ -125,6 +135,20 @@ class PlagiarismServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def IndexPdfFromMinio(self, request, context):
+        """Index PDF from MinIO bucket - extract text, chunk with titles, and index to Elasticsearch
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CheckPdfFromMinio(self, request, context):
+        """Check a PDF file from MinIO for plagiarism
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlagiarismServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -162,6 +186,16 @@ def add_PlagiarismServiceServicer_to_server(servicer, server):
                     servicer.HealthCheck,
                     request_deserializer=plagiarism__pb2.HealthCheckRequest.FromString,
                     response_serializer=plagiarism__pb2.HealthCheckResponse.SerializeToString,
+            ),
+            'IndexPdfFromMinio': grpc.unary_unary_rpc_method_handler(
+                    servicer.IndexPdfFromMinio,
+                    request_deserializer=plagiarism__pb2.IndexPdfFromMinioRequest.FromString,
+                    response_serializer=plagiarism__pb2.IndexPdfFromMinioResponse.SerializeToString,
+            ),
+            'CheckPdfFromMinio': grpc.unary_unary_rpc_method_handler(
+                    servicer.CheckPdfFromMinio,
+                    request_deserializer=plagiarism__pb2.CheckPdfFromMinioRequest.FromString,
+                    response_serializer=plagiarism__pb2.CheckPdfFromMinioResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -354,6 +388,60 @@ class PlagiarismService(object):
             '/plagiarism.PlagiarismService/HealthCheck',
             plagiarism__pb2.HealthCheckRequest.SerializeToString,
             plagiarism__pb2.HealthCheckResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def IndexPdfFromMinio(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/plagiarism.PlagiarismService/IndexPdfFromMinio',
+            plagiarism__pb2.IndexPdfFromMinioRequest.SerializeToString,
+            plagiarism__pb2.IndexPdfFromMinioResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CheckPdfFromMinio(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/plagiarism.PlagiarismService/CheckPdfFromMinio',
+            plagiarism__pb2.CheckPdfFromMinioRequest.SerializeToString,
+            plagiarism__pb2.CheckPdfFromMinioResponse.FromString,
             options,
             channel_credentials,
             insecure,
