@@ -15,7 +15,7 @@ from unstructured.documents.elements import (
     Table,
     Header,
     Footer,
-    Text,
+    Text, Element,
 )
 
 from src.config import get_settings
@@ -89,6 +89,38 @@ class PdfProcessor:
             min_chunk_size=self.min_chunk_size,
         )
 
+    def cut_page(self, elements: list[Element]) -> list[Element]:
+        # Khởi tạo danh sách sẽ chứa các element sau điểm cắt
+        elements_entry = []
+
+        point_cut = False
+
+        words_cut = ["MỤC LỤC", "TABLE OF CONTENTS", "DANH MỤC"]
+
+        for el in elements:
+
+            # Bỏ qua các PageBreak và các element không có nội dung text
+            if not el.text:
+                continue
+
+            text = el.text.strip().upper()
+
+            if not point_cut:
+                # Lặp qua các từ khóa để kiểm tra
+                if any(word in text for word in words_cut):
+                    # Đã tìm thấy Mục lục, bật cờ lên
+                    point_cut = True
+
+                    # (Tùy chọn): Nếu bạn muốn giữ lại tiêu đề "MỤC LỤC" thì không dùng continue
+                    # Ở đây chúng ta bỏ qua chính element chứa từ khóa "MỤC LỤC"
+                    continue
+            else:
+                # Nếu cờ đã được bật (point_cut == True), thêm element vào danh sách kết quả
+                elements_entry.append(el)
+
+        return elements_entry
+
+
     def process_pdf(
         self,
         pdf_path: str,
@@ -120,13 +152,14 @@ class PdfProcessor:
             logger.info(f"Processing PDF: {pdf_path}")
             print(f"[1/5] Loading PDF: {Path(pdf_path).name}...", flush=True)
 
-            elements = partition_pdf(
+            elements_tmp = partition_pdf(
                 filename=pdf_path,
                 strategy="hi_res",  # hi_res: with OCR + deep learning
                 include_page_breaks=True,
                 infer_table_structure=True,
                 extract_images_in_pdf=extract_images,
             )
+            elements = self.cut_page(elements_tmp)
             print(f"[2/5] PDF loaded - extracted {len(elements)} elements", flush=True)
 
             if not elements:
@@ -188,19 +221,20 @@ class PdfProcessor:
         return Path(pdf_path).stem
 
     def _group_into_sections(self, elements: list) -> list[PdfSection]:
-        """
-        Group elements into sections based on titles/headers.
-
-        Strategy:
-        1. When encountering a Title/Header, start a new section
-        2. Accumulate content until next Title/Header
-        3. If content gets too long, split using chunker
-        """
+        # ... (Các dòng khai báo và khởi tạo giữ nguyên)
         sections: list[PdfSection] = []
         current_title = "Introduction"  # Default section name
         current_content: list[str] = []
         current_types: list[str] = []
         position = 0
+
+        # 1. ĐỊNH NGHĨA CÁC TIÊU ĐỀ CẦN LOẠI TRỪ (Mục lục, Danh sách, v.v.)
+        EXCLUDED_TITLES = [
+            "MỤC LỤC", "DANH SÁCH", "DANH MỤC", "BẢNG", "HÌNH",
+            "TABLE OF CONTENTS", "LIST OF FIGURES", "LIST OF TABLES",
+            "ABBREVIATIONS", "TÓM TẮT", "ABSTRACT", "LỜI NÓI ĐẦU",
+            "KÝ HIỆU", "TỪ VIẾT TẮT", "INTRODUCTION", "GIỚI THIỆU"
+        ]
 
         for el in elements:
             el_type = type(el).__name__
@@ -211,7 +245,22 @@ class PdfProcessor:
 
             # Check if this is a title/header (new section)
             if isinstance(el, self.TITLE_TYPES):
-                # Save previous section if it has content
+
+                new_title = str(el).strip()
+
+                # KIỂM TRA TỪ KHÓA LOẠI TRỪ
+                is_excluded = any(keyword in new_title.upper() for keyword in EXCLUDED_TITLES)
+
+                if is_excluded:
+                    # Nếu tiêu đề là Mục lục/Danh sách, chúng ta không tạo section mới.
+                    # Thay vào đó, chúng ta sẽ coi nội dung của nó là phần của section trước
+                    # (để sau đó có thể lọc ra dễ dàng nếu cần), hoặc chỉ đơn giản là bỏ qua.
+                    # Ở đây ta chọn bỏ qua tiêu đề và nội dung của nó (không làm gì)
+                    continue
+
+                # Nếu tiêu đề HỢP LỆ:
+
+                # 1. Save previous section if it has content
                 if current_content:
                     section = self._create_section(
                         title=current_title,
@@ -223,12 +272,12 @@ class PdfProcessor:
                         sections.append(section)
                         position += 1
 
-                # Start new section
-                current_title = str(el).strip() or "Untitled Section"
+                # 2. Start new section
+                current_title = new_title or "Untitled Section"
                 current_content = []
                 current_types = []
 
-            # Add content
+            # Add content (dành cho CONTENT_TYPES và các elements bị loại trừ)
             elif isinstance(el, self.CONTENT_TYPES):
                 text = str(el).strip()
                 if text:
@@ -236,6 +285,7 @@ class PdfProcessor:
                     current_types.append(el_type)
 
         # Don't forget the last section
+        # ... (Giữ nguyên phần này)
         if current_content:
             section = self._create_section(
                 title=current_title,
