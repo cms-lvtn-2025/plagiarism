@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # gRPC Server
     grpc_host: str = Field(default="0.0.0.0", description="gRPC bind host")
     grpc_port: int = Field(default=50051, description="gRPC port")
-    grpc_max_workers: int = Field(default=10, description="Thread pool size")
+    grpc_max_workers: int = Field(default=3, description="Thread pool size")
 
     # TLS Settings
     grpc_tls_enabled: bool = Field(default=False, description="Enable TLS for gRPC")

@@ -6,6 +6,7 @@ from .detector import (
     PlagiarismResult,
     PdfPlagiarismResult,
     PdfCheckMetadata,
+    PdfTextChunk,
     get_detector,
 )
 from .document_manager import DocumentManager, UploadResult, PdfUploadResult, get_document_manager
@@ -22,6 +23,7 @@ __all__ = [
     "PlagiarismResult",
     "PdfPlagiarismResult",
     "PdfCheckMetadata",
+    "PdfTextChunk",
     "get_detector",
     "DocumentManager",
     "UploadResult",
