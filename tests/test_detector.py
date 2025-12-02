@@ -147,7 +147,7 @@ class TestPlagiarismDetector:
         assert percentage == 70.0
 
     def test_deduplicate_matches(self, mock_detector):
-        """Test match deduplication."""
+        """Test match deduplication by matched_chunk_id."""
         matches = [
             PlagiarismMatch(
                 document_id="doc1",
@@ -158,35 +158,40 @@ class TestPlagiarismDetector:
                 position_start=0,
                 position_end=4,
                 chunk_index=0,
+                matched_chunk_id="chunk_a",
             ),
             PlagiarismMatch(
                 document_id="doc1",
                 document_title="Doc 1",
                 matched_text="text",
                 input_text="text",
-                similarity_score=0.7,  # Duplicate, lower score
+                similarity_score=0.7,  # Duplicate matched_chunk_id, lower score
                 position_start=0,
                 position_end=4,
                 chunk_index=0,
+                matched_chunk_id="chunk_a",
             ),
             PlagiarismMatch(
-                document_id="doc2",
-                document_title="Doc 2",
-                matched_text="other",
+                document_id="doc1",
+                document_title="Doc 1",
+                matched_text="other chunk",
                 input_text="other",
                 similarity_score=0.9,
                 position_start=5,
                 position_end=10,
-                chunk_index=1,
+                chunk_index=0,  # Same input chunk, different matched chunk
+                matched_chunk_id="chunk_b",
             ),
         ]
 
         unique = mock_detector._deduplicate_matches(matches)
 
-        # Should keep highest score for each (doc_id, chunk_index) pair
+        # Should keep highest score for each matched_chunk_id
         assert len(unique) == 2
         assert unique[0].similarity_score == 0.9  # Sorted by score
+        assert unique[0].matched_chunk_id == "chunk_b"
         assert unique[1].similarity_score == 0.8
+        assert unique[1].matched_chunk_id == "chunk_a"
 
 
 class TestPlagiarismResult:

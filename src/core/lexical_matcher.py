@@ -102,12 +102,50 @@ def has_citation(text: str) -> bool:
     return False
 
 
+def calculate_asymmetric_lexical_similarity(input_text: str, matched_text: str) -> float:
+    """Calculate lexical similarity accounting for asymmetric text lengths.
+
+    When input is much longer than matched text, we check how much of the
+    matched text is contained in the input, rather than symmetric comparison.
+
+    This handles the case where a long input contains a plagiarized section
+    that matches a shorter chunk in the database.
+    """
+    input_normalized = normalize_for_comparison(input_text)
+    matched_normalized = normalize_for_comparison(matched_text)
+
+    if not input_normalized or not matched_normalized:
+        return 0.0
+
+    input_words = set(input_normalized.split())
+    matched_words = set(matched_normalized.split())
+
+    # If texts are similar length, use symmetric comparison
+    len_ratio = len(matched_words) / len(input_words) if input_words else 0
+
+    if len_ratio > 0.7:  # Similar lengths - use symmetric
+        return calculate_lexical_similarity(input_text, matched_text)
+
+    # Asymmetric: check how much of matched_text is found in input_text
+    # This is "containment" similarity - what % of matched words are in input
+    intersection = input_words & matched_words
+    containment = len(intersection) / len(matched_words) if matched_words else 0.0
+
+    # Also check sequence similarity on the overlapping portion
+    # Find the best matching substring in input that covers matched text
+    sequence_ratio = SequenceMatcher(None, input_normalized, matched_normalized).ratio()
+
+    # For asymmetric comparison, weight containment higher
+    # High containment means the matched text is largely present in input
+    return (containment * 0.6) + (sequence_ratio * 0.4)
+
+
 def calculate_combined_similarity(
     semantic_score: float,
     input_text: str,
     matched_text: str,
-    semantic_weight: float = 0.4,
-    lexical_weight: float = 0.6,
+    semantic_weight: float = 0.5,
+    lexical_weight: float = 0.5,
 ) -> tuple[float, dict]:
     """Calculate combined similarity score.
 
@@ -121,7 +159,8 @@ def calculate_combined_similarity(
     Returns:
         Tuple of (combined_score, details_dict)
     """
-    lexical_score = calculate_lexical_similarity(input_text, matched_text)
+    # Use asymmetric lexical similarity to handle different text lengths
+    lexical_score = calculate_asymmetric_lexical_similarity(input_text, matched_text)
 
     # If input has citation, reduce the score
     citation_penalty = 0.0

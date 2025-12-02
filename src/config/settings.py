@@ -73,9 +73,9 @@ class Settings(BaseSettings):
     similarity_low: float = Field(default=0.50, description="Low plagiarism threshold")
 
     # Text Chunking
-    chunk_size: int = Field(default=250, description="Words per chunk")
-    chunk_overlap: int = Field(default=50, description="Overlap between chunks")
-    min_chunk_size: int = Field(default=50, description="Minimum chunk size")
+    chunk_size: int = Field(default=100, description="Words per chunk")
+    chunk_overlap: int = Field(default=20, description="Overlap between chunks")
+    min_chunk_size: int = Field(default=30, description="Minimum chunk size")
 
     # Search
     top_k_results: int = Field(default=10, description="Max search results")

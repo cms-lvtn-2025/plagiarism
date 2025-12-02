@@ -43,7 +43,8 @@ class PlagiarismMatch:
     similarity_score: float
     position_start: int
     position_end: int
-    chunk_index: int
+    chunk_index: int  # Input chunk index
+    matched_chunk_id: str = ""  # Matched chunk ID from database
 
 
 @dataclass
@@ -188,6 +189,7 @@ class PlagiarismDetector:
                         position_start=chunk.start_char,
                         position_end=chunk.end_char,
                         chunk_index=i,
+                        matched_chunk_id=result.chunk_id,
                     )
                 )
 
@@ -273,21 +275,36 @@ class PlagiarismDetector:
         chunks: list[TextChunk],
         chunk_results: list[ChunkAnalysisResult],
     ) -> float:
-        """Calculate base plagiarism percentage using weighted average."""
+        """Calculate base plagiarism percentage based on plagiarized text ratio.
+
+        This calculates the percentage of text (by word count) that has
+        similarity score >= threshold, weighted by the actual similarity score.
+
+        For chunks above threshold: counts as (word_count * similarity)
+        For chunks below threshold: counts as 0
+
+        This gives a more accurate representation of how much text is plagiarized.
+        """
         if not chunks or not chunk_results:
             return 0.0
 
-        # Weighted by word count
-        total_weight = sum(chunk.word_count for chunk in chunks)
-        if total_weight == 0:
+        total_words = sum(chunk.word_count for chunk in chunks)
+        if total_words == 0:
             return 0.0
 
-        weighted_score = sum(
-            result.max_similarity * chunks[i].word_count
-            for i, result in enumerate(chunk_results)
-        )
+        # Use the low threshold as minimum for considering a chunk as "plagiarized"
+        plagiarism_threshold = self.settings.similarity_low  # 0.50 by default
 
-        return (weighted_score / total_weight) * 100
+        # Calculate plagiarized word count weighted by similarity
+        # Chunks above threshold contribute: word_count * similarity
+        # Chunks below threshold contribute: 0
+        plagiarized_weighted = 0.0
+        for i, result in enumerate(chunk_results):
+            if result.max_similarity >= plagiarism_threshold:
+                # Weight by similarity - higher similarity = more plagiarized
+                plagiarized_weighted += chunks[i].word_count * result.max_similarity
+
+        return (plagiarized_weighted / total_words) * 100
 
     def _run_ai_analysis(
         self,
@@ -326,7 +343,11 @@ class PlagiarismDetector:
     def _deduplicate_matches(
         self, matches: list[PlagiarismMatch]
     ) -> list[PlagiarismMatch]:
-        """Remove duplicate matches and sort by similarity."""
+        """Remove duplicate matches and sort by similarity.
+
+        Deduplicates by matched_chunk_id to ensure each matched chunk
+        from the database appears only once, keeping the highest similarity.
+        """
         seen = set()
         unique = []
 
@@ -336,7 +357,9 @@ class PlagiarismDetector:
         )
 
         for match in sorted_matches:
-            key = (match.document_id, match.chunk_index)
+            # Use matched_chunk_id as key to deduplicate by database chunk
+            # This allows multiple chunks from same document if they are different chunks
+            key = match.matched_chunk_id
             if key not in seen:
                 seen.add(key)
                 unique.append(match)
@@ -439,6 +462,7 @@ class PlagiarismDetector:
                         position_start=chunk_obj.start_char,
                         position_end=chunk_obj.end_char,
                         chunk_index=i,
+                        matched_chunk_id=result.chunk_id,
                     )
                 )
 

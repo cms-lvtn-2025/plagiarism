@@ -220,10 +220,16 @@ class PdfProcessor:
         # Fallback to filename
         return Path(pdf_path).stem
 
+    def _is_likely_toc_entry_by_dots(self, text: str, dot_threshold: int = 10) -> bool:
+        """Kiểm tra xem một dòng có chứa hơn X dấu chấm liên tục không."""
+        # Kiểm tra chuỗi 10 dấu chấm liên tục hoặc 10 cặp '. '
+        # (Đây là logic mạnh mẽ nhất để nhận diện TOC)
+        return (' . ' * dot_threshold in text) or ('.' * dot_threshold in text.replace(' ', ''))
+
     def _group_into_sections(self, elements: list) -> list[PdfSection]:
         # ... (Các dòng khai báo và khởi tạo giữ nguyên)
         sections: list[PdfSection] = []
-        current_title = "Introduction"  # Default section name
+        current_title = None  # Default section name
         current_content: list[str] = []
         current_types: list[str] = []
         position = 0
@@ -233,7 +239,7 @@ class PdfProcessor:
             "MỤC LỤC", "DANH SÁCH", "DANH MỤC", "BẢNG", "HÌNH",
             "TABLE OF CONTENTS", "LIST OF FIGURES", "LIST OF TABLES",
             "ABBREVIATIONS", "TÓM TẮT", "ABSTRACT", "LỜI NÓI ĐẦU",
-            "KÝ HIỆU", "TỪ VIẾT TẮT", "INTRODUCTION", "GIỚI THIỆU"
+            "KÝ HIỆU", "TỪ VIẾT TẮT", "INTRODUCTION", "GIỚI THIỆU", "TÀI LIỆU THAM KHẢO"
         ]
 
         for el in elements:
@@ -243,6 +249,14 @@ class PdfProcessor:
             if isinstance(el, self.SKIP_TYPES):
                 continue
 
+            el_text = str(el).strip()
+
+            if not el_text:
+                continue
+
+            if self._is_likely_toc_entry_by_dots(text=el_text):
+                continue  # Bỏ qua ngay lập tức vì đây là dòng mục lục
+
             # Check if this is a title/header (new section)
             if isinstance(el, self.TITLE_TYPES):
 
@@ -251,6 +265,7 @@ class PdfProcessor:
                 # KIỂM TRA TỪ KHÓA LOẠI TRỪ
                 is_excluded = any(keyword in new_title.upper() for keyword in EXCLUDED_TITLES)
 
+                # skip if current_content > 10 dấu chấm liên tục
                 if is_excluded:
                     # Nếu tiêu đề là Mục lục/Danh sách, chúng ta không tạo section mới.
                     # Thay vào đó, chúng ta sẽ coi nội dung của nó là phần của section trước
@@ -262,15 +277,18 @@ class PdfProcessor:
 
                 # 1. Save previous section if it has content
                 if current_content:
-                    section = self._create_section(
-                        title=current_title,
-                        content_parts=current_content,
-                        element_types=current_types,
-                        position=position,
-                    )
-                    if section:
-                        sections.append(section)
-                        position += 1
+                    if current_title is not None:
+                        section = self._create_section(
+                            title=current_title,
+                            content_parts=current_content,
+                            element_types=current_types,
+                            position=position,
+                        )
+                        if section:
+                            sections.append(section)
+                            position += 1
+                    # Nếu current_title là None, nội dung hiện tại (Introduction) sẽ bị bỏ qua
+                    # và current_content sẽ được reset ở bước tiếp theo.
 
                 # 2. Start new section
                 current_title = new_title or "Untitled Section"
@@ -331,6 +349,9 @@ class PdfProcessor:
             word_count=word_count,
         )
 
+    # Minimum content length in characters to be indexed
+    MIN_CONTENT_LENGTH = 200
+
     def _sections_to_chunks(
         self, sections: list[PdfSection], document_id: str
     ) -> list[PdfChunk]:
@@ -338,11 +359,22 @@ class PdfProcessor:
         Convert sections to chunks, splitting large sections if needed.
 
         Each section is chunked if it exceeds chunk_size, preserving the section title.
+        Chunks with content shorter than MIN_CONTENT_LENGTH (200 chars) are skipped.
         """
         chunks: list[PdfChunk] = []
         chunk_position = 0
+        skipped_count = 0
 
         for section in sections:
+            # Skip sections with content shorter than 200 characters
+            if len(section.content) < self.MIN_CONTENT_LENGTH:
+                skipped_count += 1
+                logger.debug(
+                    f"Skipping short section '{section.section_title}': "
+                    f"{len(section.content)} chars < {self.MIN_CONTENT_LENGTH}"
+                )
+                continue
+
             # Check if section needs to be split
             if section.word_count <= self.chunk_size:
                 # Single chunk for this section
@@ -361,6 +393,11 @@ class PdfProcessor:
                 text_chunks = self.chunker.chunk_text(section.content)
 
                 for i, text_chunk in enumerate(text_chunks):
+                    # Skip sub-chunks that are too short
+                    if len(text_chunk.text) < self.MIN_CONTENT_LENGTH:
+                        skipped_count += 1
+                        continue
+
                     # Add section context to title for sub-chunks
                     if len(text_chunks) > 1:
                         chunk_title = f"{section.section_title} (part {i + 1}/{len(text_chunks)})"
@@ -377,6 +414,9 @@ class PdfProcessor:
                     )
                     chunks.append(chunk)
                     chunk_position += 1
+
+        if skipped_count > 0:
+            logger.info(f"Skipped {skipped_count} chunks with content < {self.MIN_CONTENT_LENGTH} chars")
 
         return chunks
 

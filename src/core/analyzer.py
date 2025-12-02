@@ -191,7 +191,8 @@ class GeminiAnalyzer(BaseAnalyzer):
                     }],
                     "generationConfig": {
                         "temperature": 0.1,
-                        "maxOutputTokens": 1024,
+                        "maxOutputTokens": 4096,
+                        "responseMimeType": "application/json"
                     }
                 },
             )
