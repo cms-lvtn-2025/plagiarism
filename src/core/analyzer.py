@@ -159,7 +159,7 @@ class GeminiAnalyzer(BaseAnalyzer):
         self.api_key = self.settings.gemini_api_key
         self.model = self.settings.gemini_model
         self.timeout = self.settings.gemini_timeout
-        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        self.base_url = f"{self.settings.gemini_api_url}/{self.model}:generateContent"
 
     @property
     def client(self) -> httpx.Client:

@@ -1,5 +1,6 @@
 """gRPC Server for Plagiarism Detection Service."""
 
+import gc
 import logging
 import signal
 import sys
@@ -13,6 +14,9 @@ from src.logger import LoggingInterceptor, init_file_logger, get_file_logger
 from src.metrics import MetricsServer, MetricsInterceptor
 from src.services.plagiarism_service import PlagiarismServicer
 from src.storage import get_es_client
+from src.storage.minio_client import get_minio_client
+from src.embedding import get_ollama_client
+from src.core.analyzer import get_analyzer
 
 # Setup logging
 logging.basicConfig(
@@ -144,8 +148,12 @@ class PlagiarismServer:
             # Grace period for ongoing requests
             self.server.stop(grace=5)
 
-            # Close connections
+            # Close all clients to release memory
+            logger.info("Closing clients...")
             get_es_client().close()
+            get_ollama_client().close()
+            get_analyzer().close()
+            get_minio_client().close()
 
             # Stop metrics server
             if self.metrics_server:
@@ -155,6 +163,9 @@ class PlagiarismServer:
             file_logger = get_file_logger()
             if file_logger:
                 file_logger.close()
+
+            # Force garbage collection
+            gc.collect()
 
             logger.info("Server stopped")
 

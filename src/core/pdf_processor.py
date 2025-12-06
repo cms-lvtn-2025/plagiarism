@@ -1,5 +1,6 @@
 """PDF processing utilities using unstructured library."""
 
+import gc
 import logging
 import os
 import time
@@ -79,10 +80,10 @@ class PdfProcessor:
         chunk_overlap: Optional[int] = None,
         min_chunk_size: Optional[int] = None,
     ):
-        settings = get_settings()
-        self.chunk_size = chunk_size or settings.chunk_size
-        self.chunk_overlap = chunk_overlap or settings.chunk_overlap
-        self.min_chunk_size = min_chunk_size or settings.min_chunk_size
+        self.settings = get_settings()
+        self.chunk_size = chunk_size or self.settings.chunk_size
+        self.chunk_overlap = chunk_overlap or self.settings.chunk_overlap
+        self.min_chunk_size = min_chunk_size or self.settings.min_chunk_size
         self.chunker = TextChunker(
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
@@ -155,6 +156,7 @@ class PdfProcessor:
             elements_tmp = partition_pdf(
                 filename=pdf_path,
                 strategy="hi_res",  # hi_res: with OCR + deep learning
+                ocr_agent="unstructured.partition.utils.ocr_models.paddle_ocr.OCRAgentPaddle",
                 include_page_breaks=True,
                 infer_table_structure=True,
                 extract_images_in_pdf=extract_images,
@@ -207,6 +209,9 @@ class PdfProcessor:
                 document_title="",
                 error_message=str(e),
             )
+        finally:
+            # Force garbage collection to release OCR/ML models memory
+            gc.collect()
 
     def _extract_document_title(self, elements: list, pdf_path: str) -> str:
         """Extract document title from elements or filename."""
@@ -349,9 +354,6 @@ class PdfProcessor:
             word_count=word_count,
         )
 
-    # Minimum content length in characters to be indexed
-    MIN_CONTENT_LENGTH = 200
-
     def _sections_to_chunks(
         self, sections: list[PdfSection], document_id: str
     ) -> list[PdfChunk]:
@@ -359,7 +361,7 @@ class PdfProcessor:
         Convert sections to chunks, splitting large sections if needed.
 
         Each section is chunked if it exceeds chunk_size, preserving the section title.
-        Chunks with content shorter than MIN_CONTENT_LENGTH (200 chars) are skipped.
+        Chunks with content shorter than min_content_length (from settings) are skipped.
         """
         chunks: list[PdfChunk] = []
         chunk_position = 0
@@ -367,11 +369,11 @@ class PdfProcessor:
 
         for section in sections:
             # Skip sections with content shorter than 200 characters
-            if len(section.content) < self.MIN_CONTENT_LENGTH:
+            if len(section.content) < self.settings.min_content_length:
                 skipped_count += 1
                 logger.debug(
                     f"Skipping short section '{section.section_title}': "
-                    f"{len(section.content)} chars < {self.MIN_CONTENT_LENGTH}"
+                    f"{len(section.content)} chars < {self.settings.min_content_length}"
                 )
                 continue
 
@@ -394,7 +396,7 @@ class PdfProcessor:
 
                 for i, text_chunk in enumerate(text_chunks):
                     # Skip sub-chunks that are too short
-                    if len(text_chunk.text) < self.MIN_CONTENT_LENGTH:
+                    if len(text_chunk.text) < self.settings.min_content_length:
                         skipped_count += 1
                         continue
 
@@ -416,7 +418,7 @@ class PdfProcessor:
                     chunk_position += 1
 
         if skipped_count > 0:
-            logger.info(f"Skipped {skipped_count} chunks with content < {self.MIN_CONTENT_LENGTH} chars")
+            logger.info(f"Skipped {skipped_count} chunks with content < {self.settings.min_content_length} chars")
 
         return chunks
 

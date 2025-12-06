@@ -1,6 +1,7 @@
 """MinIO client wrapper for file storage."""
 
 import logging
+import os
 import tempfile
 from typing import Optional
 from pathlib import Path
@@ -90,6 +91,7 @@ class MinioClient:
         Returns:
             Local file path if successful, None otherwise.
         """
+        temp_file_created = False
         try:
             if local_path is None:
                 # Create temp file with same extension
@@ -99,6 +101,7 @@ class MinioClient:
                 )
                 local_path = temp_file.name
                 temp_file.close()
+                temp_file_created = True
 
             self.client.fget_object(bucket_name, object_path, local_path)
             logger.info(f"Downloaded {bucket_name}/{object_path} to {local_path}")
@@ -106,9 +109,13 @@ class MinioClient:
 
         except S3Error as e:
             logger.error(f"Failed to download file: {e}")
+            if temp_file_created and local_path and os.path.exists(local_path):
+                os.remove(local_path)
             return None
         except Exception as e:
             logger.error(f"Unexpected error downloading file: {e}")
+            if temp_file_created and local_path and os.path.exists(local_path):
+                os.remove(local_path)
             return None
 
     def download_file_to_memory(
@@ -124,11 +131,10 @@ class MinioClient:
         Returns:
             File content as bytes if successful, None otherwise.
         """
+        response = None
         try:
             response = self.client.get_object(bucket_name, object_path)
             data = response.read()
-            response.close()
-            response.release_conn()
             logger.info(f"Downloaded {bucket_name}/{object_path} to memory ({len(data)} bytes)")
             return data
         except S3Error as e:
@@ -137,6 +143,10 @@ class MinioClient:
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return None
+        finally:
+            if response:
+                response.close()
+                response.release_conn()
 
     def list_objects(
         self, bucket_name: str, prefix: str = "", recursive: bool = True
@@ -158,6 +168,14 @@ class MinioClient:
         except S3Error as e:
             logger.error(f"Failed to list objects: {e}")
             return []
+
+    def close(self):
+        """Close the MinIO client and release resources."""
+        if self._client:
+            # MinIO client uses urllib3 connection pool internally
+            # Setting to None allows garbage collection
+            self._client = None
+            logger.info("MinIO client closed")
 
 
 # Singleton instance

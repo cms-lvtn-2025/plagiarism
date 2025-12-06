@@ -18,9 +18,8 @@ aiohttp>=3.9.0
 tiktoken>=0.5.2
 langdetect>=1.0.9
 
-# PDF processing
-unstructured>=0.11.0
-unstructured[pdf]>=0.11.0
+# PDF processing with PaddleOCR
+unstructured[pdf,ocr-paddle]>=0.11.0
 
 # MinIO storage
 minio>=7.2.0

@@ -101,14 +101,8 @@ class PdfTextChunk:
     text: str
     word_count: int
     position: int
-
-    @property
-    def start_char(self) -> int:
-        return self.position * 100
-
-    @property
-    def end_char(self) -> int:
-        return (self.position + 1) * 100
+    start_char: int = 0
+    end_char: int = 0
 
 
 class PlagiarismDetector:
@@ -430,6 +424,9 @@ class PlagiarismDetector:
         all_matches: list[PlagiarismMatch] = []
         chunk_results: list[ChunkAnalysisResult] = []
 
+        # Calculate cumulative character positions
+        cumulative_char = 0
+
         for i, (pdf_chunk, embedding) in enumerate(zip(pdf_chunks, embeddings)):
             # Vector search
             search_results = self.es_client.vector_search(
@@ -439,12 +436,15 @@ class PlagiarismDetector:
                 exclude_doc_ids=exclude_doc_ids,
             )
 
-            # Create wrapper for analysis
+            # Create wrapper for analysis with actual character positions
             chunk_obj = PdfTextChunk(
                 text=pdf_chunk.text,
                 word_count=pdf_chunk.word_count,
                 position=pdf_chunk.position,
+                start_char=cumulative_char,
+                end_char=cumulative_char + len(pdf_chunk.text),
             )
+            cumulative_char += len(pdf_chunk.text) + 1  # +1 for separator
 
             # Analyze chunk
             chunk_analysis = self._analyze_chunk(i, chunk_obj, search_results)

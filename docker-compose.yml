@@ -38,9 +38,10 @@ services:
   #   #           capabilities: [gpu]
 
   plagiarism-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: thaily/plagiarism:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: plagiarism-service
     ports:
       - "50051:50051"
@@ -50,6 +51,8 @@ services:
       - OLLAMA_HOST=http://host.docker.internal:11434
       - GRPC_HOST=0.0.0.0
       - GRPC_PORT=50051
+    volumes:
+      - ./certs:/app/certs:ro
     depends_on:
       elasticsearch:
         condition: service_healthy

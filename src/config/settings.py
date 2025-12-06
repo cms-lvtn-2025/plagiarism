@@ -41,6 +41,10 @@ class Settings(BaseSettings):
         default="gemini-2.0-flash", description="Gemini model name"
     )
     gemini_timeout: int = Field(default=60, description="Gemini request timeout")
+    gemini_api_url: str = Field(
+        default="https://generativelanguage.googleapis.com/v1beta/models",
+        description="Gemini API base URL"
+    )
 
     # gRPC Server
     grpc_host: str = Field(default="0.0.0.0", description="gRPC bind host")
@@ -76,6 +80,7 @@ class Settings(BaseSettings):
     chunk_size: int = Field(default=100, description="Words per chunk")
     chunk_overlap: int = Field(default=20, description="Overlap between chunks")
     min_chunk_size: int = Field(default=30, description="Minimum chunk size")
+    min_content_length: int = Field(default=200, description="Minimum content length in chars to index")
 
     # Search
     top_k_results: int = Field(default=10, description="Max search results")
