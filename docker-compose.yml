@@ -38,27 +38,59 @@ services:
   #   #           capabilities: [gpu]
 
   plagiarism-service:
-    image: thaily/plagiarism:latest
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
+    # image: thaily/plagiarism:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: plagiarism-service
     ports:
-      - "50051:50051"
+      - "${GRPC_PORT:-50057}:${GRPC_PORT:-50057}"
+      - "${METRICS_PORT:-9107}:${METRICS_PORT:-9107}"
     environment:
-      - ES_HOST=elasticsearch
-      - ES_PORT=9200
-      - OLLAMA_HOST=http://host.docker.internal:11434
+      # Elasticsearch
+      - ES_HOST=${ES_HOST:-172.17.0.1}
+      - ES_PORT=${ES_PORT:-10010}
+      - ES_USER=${ES_USER:-thaily}
+      - ES_PASSWORD=${ES_PASSWORD:-Th@i2004}
+      - ES_SCHEME=${ES_SCHEME:-http}
+      - ES_INDEX=${ES_INDEX:-plagiarism_documents}
+      # Analyzer
+      - ANALYZER_MODE=${ANALYZER_MODE:-external}
+      # Gemini
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      # Ollama
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://172.17.0.1:10006}
+      # gRPC
       - GRPC_HOST=0.0.0.0
-      - GRPC_PORT=50051
+      - GRPC_PORT=${GRPC_PORT:-50057}
+      - GRPC_MAX_WORKERS=${GRPC_MAX_WORKERS:-3}
+      # TLS - paths inside container
+      - GRPC_TLS_ENABLED=${GRPC_TLS_ENABLED:-true}
+      - GRPC_CERT_PATH=/app/certs/plagiarism-server.crt
+      - GRPC_KEY_PATH=/app/certs/plagiarism-server.key
+      - GRPC_CA_PATH=/app/certs/ca.crt
+      - GRPC_REQUIRE_CLIENT_CERT=${GRPC_REQUIRE_CLIENT_CERT:-false}
+      # MinIO
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-172.17.0.1}
+      - MINIO_PORT=${MINIO_PORT:-10005}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-thaily}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-Th@i2004}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-lvtn}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - METRICS_PORT=${METRICS_PORT:-9107}
     volumes:
       - ./certs:/app/certs:ro
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    # For Linux, use host network to access Ollama on localhost
-    # extra_hosts:
-    #   - "host.docker.internal:host-gateway"
+      - ./logs:/app/logs
+    # For Linux, use host network to access services on localhost
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Remove depends_on if not using local ES
+    # depends_on:
+    #   elasticsearch:
+    #     condition: service_healthy
 
 volumes:
   es_data:

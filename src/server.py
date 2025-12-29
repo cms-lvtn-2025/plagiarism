@@ -107,16 +107,21 @@ class PlagiarismServer:
                     server_key = f.read()
                 with open(self.settings.grpc_cert_path, "rb") as f:
                     server_cert = f.read()
-                with open(self.settings.grpc_ca_path, "rb") as f:
-                    ca_cert = f.read()
+
+                # Only load CA cert if client auth is required
+                ca_cert = None
+                if self.settings.grpc_require_client_cert:
+                    with open(self.settings.grpc_ca_path, "rb") as f:
+                        ca_cert = f.read()
 
                 credentials = grpc.ssl_server_credentials(
                     [(server_key, server_cert)],
                     root_certificates=ca_cert,
-                    require_client_auth=True,
+                    require_client_auth=self.settings.grpc_require_client_cert,
                 )
                 self.server.add_secure_port(address, credentials)
-                logger.info(f"🔒 TLS enabled - Plagiarism Detection Service started on {address}")
+                tls_mode = "mTLS" if self.settings.grpc_require_client_cert else "TLS"
+                logger.info(f"🔒 {tls_mode} enabled - Plagiarism Detection Service started on {address}")
             except Exception as e:
                 logger.error(f"Failed to load TLS certificates: {e}")
                 logger.warning("Falling back to insecure connection")

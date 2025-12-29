@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     grpc_cert_path: str = Field(default="certs/plagiarism-server.crt", description="Server certificate path")
     grpc_key_path: str = Field(default="certs/plagiarism-server.key", description="Server private key path")
     grpc_ca_path: str = Field(default="certs/ca.crt", description="CA certificate path")
+    grpc_require_client_cert: bool = Field(default=False, description="Require client certificate (mTLS)")
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")

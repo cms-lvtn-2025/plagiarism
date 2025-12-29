@@ -54,11 +54,15 @@ class ElasticsearchClient:
     def client(self) -> Elasticsearch:
         """Get or create Elasticsearch client."""
         if self._client is None:
+            # Always use basic_auth if user and password are provided
+            auth = None
+            if self.settings.es_user and self.settings.es_password:
+                auth = (self.settings.es_user, self.settings.es_password)
+                logger.info(f"Using ES authentication with user: {self.settings.es_user}")
+
             self._client = Elasticsearch(
                 hosts=[self.settings.es_url],
-                basic_auth=(self.settings.es_user, self.settings.es_password)
-                if self.settings.es_password != "changeme"
-                else None,
+                basic_auth=auth,
                 verify_certs=False,
                 request_timeout=30,
             )
